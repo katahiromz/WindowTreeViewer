@@ -47,6 +47,7 @@ public:
                 // apply Explorer's visual style
                 (*pSetWindowTheme)(m_ctl1, L"Explorer", NULL);
             }
+
             FreeLibrary(hinstUXTheme);
         }
 
