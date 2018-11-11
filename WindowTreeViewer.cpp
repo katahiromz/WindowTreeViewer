@@ -7,8 +7,6 @@
 #include "MResizable.hpp"
 #include "resource.h"
 
-typedef HRESULT (WINAPI *SETWINDOWTHEME)(HWND, LPCWSTR, LPCWSTR);
-
 class WindowTreeViewer : public MDialogBase
 {
 public:
@@ -39,6 +37,7 @@ public:
 
         if (HINSTANCE hinstUXTheme = LoadLibrary(TEXT("UXTHEME")))
         {
+            typedef HRESULT (WINAPI *SETWINDOWTHEME)(HWND, LPCWSTR, LPCWSTR);
             SETWINDOWTHEME pSetWindowTheme =
                 (SETWINDOWTHEME)GetProcAddress(hinstUXTheme, "SetWindowTheme");
 
