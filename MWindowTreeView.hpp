@@ -93,6 +93,7 @@ public:
     void clear();
 
     bool get_selected_hwnd(HWND& hwnd) const;
+    bool select_hwnd(HWND hwnd);
 
     bool find_text(HTREEITEM& hItem, const MString& text, HTREEITEM hParent = TVI_ROOT) const;
     static HICON GetIconOfWindow(HWND hwnd, UINT uType = ICON_BIG);
@@ -567,6 +568,16 @@ inline HWND MWindowTreeView::WindowFromItem(HTREEITEM hItem) const
         return node->m_hwnd;
     }
     return NULL;
+}
+
+inline bool MWindowTreeView::select_hwnd(HWND hwnd)
+{
+    if (node_type *node = find_node(hwnd))
+    {
+        if (HTREEITEM hItem = ItemFromNode(node))
+            return !!SelectItem(hItem);
+    }
+    return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////
