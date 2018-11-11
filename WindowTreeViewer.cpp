@@ -7,6 +7,8 @@
 #include "MResizable.hpp"
 #include "resource.h"
 
+typedef HRESULT (WINAPI *SETWINDOWTHEME)(HWND, LPCWSTR, LPCWSTR);
+
 class WindowTreeViewer : public MDialogBase
 {
 public:
@@ -34,6 +36,20 @@ public:
     BOOL OnInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
     {
         SubclassChildDx(m_ctl1, ctl1);
+
+        if (HINSTANCE hinstUXTheme = LoadLibrary(TEXT("UXTHEME")))
+        {
+            SETWINDOWTHEME pSetWindowTheme =
+                (SETWINDOWTHEME)GetProcAddress(hinstUXTheme, "SetWindowTheme");
+
+            if (pSetWindowTheme)
+            {
+                // apply Explorer's visual style
+                (*pSetWindowTheme)(m_ctl1, L"Explorer", NULL);
+            }
+            FreeLibrary(hinstUXTheme);
+        }
+
         m_ctl1.refresh();
 
         SendMessageDx(WM_SETICON, ICON_BIG, LPARAM(m_hIcon));

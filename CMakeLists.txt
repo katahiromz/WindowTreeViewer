@@ -53,6 +53,7 @@ elseif (MSVC)
     foreach(CompilerFlags ${CompilerFlags})
         string(REPLACE "/MD" "/MT" ${CompilerFlags} "${${CompilerFlags}}")
     endforeach()
+    add_definitions(-DMSVC)
 endif()
 
 ##############################################################################
