@@ -13,12 +13,13 @@ public:
     HINSTANCE   m_hInst;        // the instance handle
     HICON       m_hIcon;        // the main icon
     HICON       m_hIconSm;      // the small icon
+    HWND                m_hwndSelected;
     MWindowTreeView     m_ctl1;
     MResizable          m_resizable;
 
     WindowTreeViewer(HINSTANCE hInst)
         : MDialogBase(IDD_MAIN), m_hInst(hInst),
-          m_hIcon(NULL), m_hIconSm(NULL)
+          m_hIcon(NULL), m_hIconSm(NULL), m_hwndSelected(NULL)
     {
         m_hIcon = LoadIconDx(IDI_MAIN);
         m_hIconSm = LoadSmallIconDx(IDI_MAIN);
@@ -53,12 +54,19 @@ public:
         m_resizable.OnSize();
     }
 
+    void OnOK(HWND hwnd)
+    {
+        m_hwndSelected = NULL;
+        m_ctl1.get_selected_hwnd(m_hwndSelected);
+        EndDialog(IDOK);
+    }
+
     void OnCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
     {
         switch (id)
         {
         case IDOK:
-            EndDialog(IDOK);
+            OnOK(hwnd);
             break;
         case IDCANCEL:
             EndDialog(IDCANCEL);
@@ -89,7 +97,13 @@ public:
 
     INT RunDx()
     {
-        return INT(DialogBoxDx(NULL));
+        if (IDOK == DialogBoxDx(NULL))
+        {
+            TCHAR szText[64];
+            StringCbPrintf(szText, sizeof(szText), TEXT("HWND: 0x%08lX"),
+                           (LONG)(LONG_PTR)m_hwndSelected);
+            MsgBoxDx(szText, TEXT("Selected Window"), MB_ICONINFORMATION);
+        }
     }
 };
 

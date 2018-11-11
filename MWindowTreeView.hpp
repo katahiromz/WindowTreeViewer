@@ -3,7 +3,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #ifndef MZC4_MWINDOWTREEVIEW_HPP_
-#define MZC4_MWINDOWTREEVIEW_HPP_     0       /* Version 0 */
+#define MZC4_MWINDOWTREEVIEW_HPP_     1       /* Version 1 */
 
 #include "MTreeView.hpp"
 #include <psapi.h>      // for GetModuleFileNameEx
@@ -358,15 +358,12 @@ inline void MWindowTreeView::clear()
 
 inline bool MWindowTreeView::get_selected_hwnd(HWND& hwnd) const
 {
+    hwnd = NULL;
     if (HTREEITEM hItem = GetSelectedItem())
     {
-        if (DWORD_PTR data = GetItemData(hItem))
-        {
-            hwnd = (HWND)data;
-            return true;
-        }
+        hwnd = WindowFromItem(hItem);
     }
-    return false;
+    return hwnd != NULL;
 }
 
 inline HTREEITEM
@@ -390,7 +387,8 @@ MWindowTreeView::InsertNodeItem(const node_type *node, HTREEITEM hParent)
     BOOL bExtracted = FALSE;
     HICON hIcon = MWindowTreeView::GetIconOfWindow(node->m_hwnd, bExtracted);
     INT iImage = ImageList_AddIcon(m_himl, hIcon);
-    UINT mask = TVIF_HANDLE | TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_TEXT | TVIF_STATE;
+    UINT mask = TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_TEXT |
+                TVIF_STATE | TVIF_PARAM;
     UINT state = TVIS_EXPANDED;
     LPARAM lParam = (LPARAM)node;
     HTREEITEM hItem = InsertItem(mask, text.c_str(), iImage, iImage, 
