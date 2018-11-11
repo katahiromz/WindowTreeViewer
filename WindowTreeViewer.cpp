@@ -1,4 +1,6 @@
-// MyProject.cpp
+// WindowTreeViewer.cpp
+// Copyright (C) 2018 Katayama Hirofumi MZ <katayama.hirofumi.mz@gmail.com>.
+// This file is public domain software.
 
 #include "targetver.h"
 #include "MWindowTreeView.hpp"

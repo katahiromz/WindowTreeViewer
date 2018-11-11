@@ -329,8 +329,8 @@ inline MString MWindowTreeView::text_from_node(const node_type *node) const
 {
     HWND hwndTarget = node->m_hwnd;
 
-    TCHAR szText[32];
-    StringCbPrintf(szText, sizeof(szText), TEXT("hwnd:%08lX "),
+    TCHAR szText[64];
+    StringCbPrintf(szText, sizeof(szText), TEXT("%08lX "),
                    (LONG)(LONG_PTR)hwndTarget);
     MString strText = szText;
 
