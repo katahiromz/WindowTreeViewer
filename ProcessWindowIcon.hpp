@@ -1,3 +1,7 @@
+// ProcessWindowIcon.hpp -- Processes, Windows, and Icons      -*- C++ -*-
+// This file is part of MZC4.  See file "ReadMe.txt" and "License.txt".
+////////////////////////////////////////////////////////////////////////////
+
 #ifndef PROCESSWINDOWICON_HPP_
 #define PROCESSWINDOWICON_HPP_      1   // Version 1
 
