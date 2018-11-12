@@ -1,5 +1,7 @@
 #ifndef PROCESSWINDOWICON_HPP_
-#define PROCESSWINDOWICON_HPP_      0   // Version 0
+#define PROCESSWINDOWICON_HPP_      1   // Version 1
+
+#include "MWindowBase.hpp"
 
 MString GetPathOfProcessDx(DWORD pid);
 HICON GetStdIconDx(LPCTSTR pszIcon, UINT uType = ICON_BIG);
