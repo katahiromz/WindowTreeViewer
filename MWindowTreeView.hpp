@@ -3,12 +3,18 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #ifndef MZC4_MWINDOWTREEVIEW_HPP_
-#define MZC4_MWINDOWTREEVIEW_HPP_     4       /* Version 4 */
+#define MZC4_MWINDOWTREEVIEW_HPP_     6       /* Version 6 */
 
 #include "MTreeView.hpp"
+#include <shellapi.h>   // for SHGetFileInfo
 #include <psapi.h>      // for GetModuleFileNameEx
 #include <vector>       // for std::vector
 #include <algorithm>    // for std::sort and std::unique
+
+MString GetPathOfProcessDx(DWORD pid);
+HICON GetStdIconDx(LPCTSTR pszIcon, UINT uType = ICON_BIG);
+HICON GetIconOfProcessDx(DWORD pid, UINT uType = ICON_BIG);
+HICON GetIconOfWindowDx(HWND hwnd, UINT uType = ICON_BIG);
 
 ////////////////////////////////////////////////////////////////////////////
 // MWindowTree
@@ -16,6 +22,7 @@
 struct MWindowTreeNode
 {
     HWND m_hwnd;
+    DWORD m_pid;
     std::vector<MWindowTreeNode *> m_children;
 
     MWindowTreeNode(HWND hwnd = NULL);
@@ -52,8 +59,10 @@ public:
 
     typedef MWindowTreeNode node_type;
 
-    bool get_tree();
+    bool get_tree(bool do_distribute = true);
     MWindowTreeNode *root() const;
+
+    bool distribute();
 
     bool empty() const;
     void clear();
@@ -75,6 +84,13 @@ private:
 ////////////////////////////////////////////////////////////////////////////
 // MWindowTreeView
 
+enum MWindowTreeViewStyle
+{
+    MWTVS_PROCESSVIEW = 0x0001,
+    MWTVS_DESKTOPVIEW = 0x0002,
+    MWTVS_EXPANDED = 0x0004,
+};
+
 class MWindowTreeView : public MTreeView
 {
 public:
@@ -92,11 +108,13 @@ public:
     bool empty() const;
     void clear();
 
+    DWORD get_style() const;
+    void set_style(DWORD style);
+
     bool get_selected_hwnd(HWND& hwnd) const;
     bool select_hwnd(HWND hwnd);
 
     bool find_text(HTREEITEM& hItem, const MString& text, HTREEITEM hParent = TVI_ROOT) const;
-    static HICON GetIconOfWindow(HWND hwnd, UINT uType = ICON_BIG);
 
     HTREEITEM ItemFromWindow(HWND hwnd) const;
     HTREEITEM ItemFromNode(const node_type *node,
@@ -124,6 +142,7 @@ public:
 protected:
     MWindowTree m_tree;
     HIMAGELIST m_himl;
+    DWORD m_style;  // See MWindowTreeViewStyle.
 
     void ReCreateTreeImageList();
 };
@@ -131,7 +150,7 @@ protected:
 ////////////////////////////////////////////////////////////////////////////
 // MWindowTreeNode inlines
 
-inline MWindowTreeNode::MWindowTreeNode(HWND hwnd) : m_hwnd(hwnd)
+inline MWindowTreeNode::MWindowTreeNode(HWND hwnd) : m_hwnd(hwnd), m_pid(0)
 {
 }
 
@@ -269,7 +288,7 @@ bool MWindowTree::empty() const
     return m_root == NULL || m_root->m_children.empty();
 }
 
-inline bool MWindowTree::get_tree()
+inline bool MWindowTree::get_tree(bool do_distribute)
 {
     clear();
 
@@ -287,7 +306,49 @@ inline bool MWindowTree::get_tree()
         insert_by_relation(relations[i]);
     }
 
+    if (do_distribute)
+        distribute();
+
     return !empty();
+}
+
+inline bool MWindowTree::distribute()
+{
+    if (!m_root)
+        return false;
+
+    MWindowTreeNode *new_root = new MWindowTreeNode();
+    MWindowTreeNode *old_root = m_root;
+
+    for (size_t i = 0; i < old_root->m_children.size(); ++i)
+    {
+        MWindowTreeNode *child = old_root->m_children[i];
+        DWORD pid = 0;
+        ::GetWindowThreadProcessId(child->m_hwnd, &pid);
+
+        size_t k;
+        for (k = 0; k < new_root->m_children.size(); ++k)
+        {
+            if (new_root->m_children[k]->m_pid == pid)
+            {
+                new_root->m_children[k]->m_children.push_back(child);
+                break;
+            }
+        }
+        if (k == new_root->m_children.size())
+        {
+            MWindowTreeNode *new_child = new MWindowTreeNode();
+            new_child->m_pid = pid;
+            new_child->m_children.push_back(child);
+            new_root->m_children.push_back(new_child);
+        }
+    }
+
+    m_root = new_root;
+    old_root->m_children.clear();
+    delete old_root;
+
+    return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -319,19 +380,20 @@ inline bool MWindowTreeView::refresh()
 {
     SendMessageDx(WM_SETREDRAW, FALSE);
     clear();
-    if (m_tree.get_tree())
+    bool do_distribute = !!(get_style() & MWTVS_PROCESSVIEW);
+    if (m_tree.get_tree(do_distribute))
     {
-        if (1)
-        {
-            InsertNodeTree(root());
-        }
-        else
+        if (do_distribute)
         {
             MWindowTreeNode *the_root = root();
             for (size_t i = 0; i < the_root->m_children.size(); ++i)
             {
                 InsertNodeTree(the_root->m_children[i]);
             }
+        }
+        else
+        {
+            InsertNodeTree(root());
         }
     }
     SendMessageDx(WM_SETREDRAW, TRUE);
@@ -340,21 +402,44 @@ inline bool MWindowTreeView::refresh()
 
 inline MString MWindowTreeView::text_from_node(const node_type *node) const
 {
-    HWND hwndTarget = node->m_hwnd;
+    if (node->m_pid)
+    {
+        DWORD pid = node->m_pid;
 
-    TCHAR szText[64];
-    StringCbPrintf(szText, sizeof(szText), TEXT("%08lX "),
-                   (LONG)(LONG_PTR)hwndTarget);
-    MString strText = szText;
+        TCHAR szText[64];
+        StringCbPrintf(szText, sizeof(szText), TEXT("PID %lu "), pid);
+        MString strText = szText;
+        MString strPath = GetPathOfProcessDx(pid);
 
-    strText += TEXT(" [");
-    GetClassName(hwndTarget, szText, ARRAYSIZE(szText));
-    strText += szText;
-    strText += TEXT("] ");
+        if (strPath.size())
+        {
+            szText[0] = 0;
+            GetFileTitle(strPath.c_str(), szText, ARRAYSIZE(szText));
+            strText += TEXT("[");
+            strText += szText;
+            strText += TEXT("] ");
+        }
 
-    strText += MWindowBase::GetWindowText(hwndTarget);
+        strText += strPath;
+        return strText;
+    }
+    else
+    {
+        HWND hwndTarget = node->m_hwnd;
 
-    return strText;
+        TCHAR szText[64];
+        StringCbPrintf(szText, sizeof(szText), TEXT("%08lX "),
+                       (LONG)(LONG_PTR)hwndTarget);
+        MString strText = szText;
+
+        strText += TEXT(" [");
+        GetClassName(hwndTarget, szText, ARRAYSIZE(szText));
+        strText += szText;
+        strText += TEXT("] ");
+
+        strText += MWindowBase::GetWindowText(hwndTarget);
+        return strText;
+    }
 }
 
 inline bool MWindowTreeView::empty() const
@@ -396,16 +481,52 @@ MWindowTreeView::InsertNodeTree(const node_type *node, HTREEITEM hParent)
 inline HTREEITEM
 MWindowTreeView::InsertNodeItem(const node_type *node, HTREEITEM hParent)
 {
+    HTREEITEM hItem;
     MString text = text_from_node(node);
-    HICON hIcon = MWindowTreeView::GetIconOfWindow(node->m_hwnd);
-    INT iImage = ImageList_AddIcon(m_himl, hIcon);
-    UINT mask = TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_TEXT |
-                TVIF_STATE | TVIF_PARAM;
-    UINT state = TVIS_EXPANDED;
-    LPARAM lParam = (LPARAM)node;
-    HTREEITEM hItem = InsertItem(mask, text.c_str(), iImage, iImage, 
-                                 state, state, lParam, hParent);
-    DestroyIcon(hIcon);
+    if (node->m_pid)
+    {
+        HICON hIcon = GetIconOfProcessDx(node->m_pid, ICON_SMALL);
+        if (!hIcon)
+            hIcon = GetStdIconDx(IDI_APPLICATION, ICON_SMALL);
+        assert(hIcon);
+        INT iImage = ImageList_AddIcon(m_himl, hIcon);
+        UINT mask = TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_TEXT |
+                    TVIF_STATE | TVIF_PARAM;
+        UINT state = 0;
+        if (get_style() & MWTVS_EXPANDED)
+        {
+            state = TVIS_EXPANDED;
+        }
+        LPARAM lParam = (LPARAM)node;
+        hItem = InsertItem(mask, text.c_str(), iImage, iImage,
+                           state, state, lParam, hParent);
+        DestroyIcon(hIcon);
+    }
+    else
+    {
+        HWND hwndTarget = node->m_hwnd;
+        HICON hIcon = GetIconOfWindowDx(hwndTarget);
+        if (!hIcon)
+        {
+            if (!GetWindow(hwndTarget, GW_OWNER) && !GetParent(hwndTarget))
+                hIcon = GetStdIconDx(IDI_APPLICATION, ICON_SMALL);
+            else
+                hIcon = GetStdIconDx(IDI_INFORMATION, ICON_SMALL);
+        }
+        assert(hIcon);
+        INT iImage = ImageList_AddIcon(m_himl, hIcon);
+        UINT mask = TVIF_IMAGE | TVIF_SELECTEDIMAGE | TVIF_TEXT |
+                    TVIF_STATE | TVIF_PARAM;
+        UINT state = 0;
+        if (get_style() & MWTVS_EXPANDED)
+        {
+            state = TVIS_EXPANDED;
+        }
+        LPARAM lParam = (LPARAM)node;
+        hItem = InsertItem(mask, text.c_str(), iImage, iImage,
+                           state, state, lParam, hParent);
+        DestroyIcon(hIcon);
+    }
     return hItem;
 }
 
@@ -433,100 +554,6 @@ MWindowTreeView::find_text(HTREEITEM& hItem, const MString& text, HTREEITEM hPar
     }
 
     return false;
-}
-
-inline HICON MWindowTreeView::GetIconOfWindow(HWND hwnd, UINT uType)
-{
-    HICON hIcon = NULL;
-
-    if (!hIcon)
-    {
-        DWORD_PTR dwResult = 0;
-        UINT uTimeout = 100;
-        SendMessageTimeout(hwnd, WM_GETICON, uType, 0, SMTO_ABORTIFHUNG,
-                           uTimeout, &dwResult);
-        hIcon = (HICON)dwResult;
-    }
-
-    if (!hIcon)
-    {
-        switch (uType)
-        {
-        case ICON_SMALL:
-            hIcon = (HICON)GetClassLongPtr(hwnd, GCL_HICONSM);
-            if (hIcon)
-                break;
-            // FALL THROUGH
-        case ICON_BIG:
-            hIcon = (HICON)GetClassLongPtr(hwnd, GCL_HICON);
-            break;
-        }
-    }
-
-    if (hIcon)
-        return CopyIcon(hIcon);
-
-    if (!hIcon && !GetWindow(hwnd, GW_OWNER) && !GetParent(hwnd))
-    {
-        DWORD pid;
-        GetWindowThreadProcessId(hwnd, &pid);
-        const DWORD dwAccess = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
-        if (HANDLE hProcess = ::OpenProcess(dwAccess, FALSE, pid))
-        {
-            HMODULE hMod = (HMODULE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE);
-            TCHAR szPath[MAX_PATH];
-            if (GetModuleFileNameEx(hProcess, hMod, szPath, ARRAYSIZE(szPath)))
-            {
-                SHFILEINFO shfi;
-                ZeroMemory(&shfi, sizeof(shfi));
-                UINT uFlags = 0;
-                switch (uType)
-                {
-                case ICON_SMALL:
-                    uFlags = SHGFI_ICON | SHGFI_SMALLICON;
-                    break;
-
-                case ICON_BIG:
-                    uFlags = SHGFI_ICON | SHGFI_LARGEICON;
-                    break;
-                }
-                SHGetFileInfo(szPath, 0, &shfi, sizeof(shfi), uFlags);
-                hIcon = shfi.hIcon;
-            }
-            ::CloseHandle(hProcess);
-        }
-    }
-
-    if (!hIcon)
-    {
-        INT cx, cy;
-        switch (uType)
-        {
-        case ICON_SMALL:
-            cx = GetSystemMetrics(SM_CXSMICON);
-            cy = GetSystemMetrics(SM_CYSMICON);
-            if (!GetWindow(hwnd, GW_OWNER) && !GetParent(hwnd))
-            {
-                hIcon = (HICON)LoadImage(NULL, IDI_APPLICATION, IMAGE_ICON,
-                                         cx, cy, 0);
-            }
-            else
-            {
-                hIcon = (HICON)LoadImage(NULL, IDI_INFORMATION, IMAGE_ICON,
-                                         cx, cy, 0);
-            }
-            break;
-
-        case ICON_BIG:
-            if (!GetWindow(hwnd, GW_OWNER) && !GetParent(hwnd))
-                hIcon = LoadIcon(NULL, IDI_APPLICATION);
-            else
-                hIcon = LoadIcon(NULL, IDI_INFORMATION);
-            break;
-        }
-    }
-
-    return hIcon;
 }
 
 inline HTREEITEM
@@ -578,6 +605,154 @@ inline bool MWindowTreeView::select_hwnd(HWND hwnd)
             return !!SelectItem(hItem);
     }
     return false;
+}
+
+inline DWORD MWindowTreeView::get_style() const
+{
+    return m_style;
+}
+
+inline void MWindowTreeView::set_style(DWORD style)
+{
+    m_style = style;
+}
+
+////////////////////////////////////////////////////////////////////////////
+
+inline HICON GetIconOfWindowDx(HWND hwnd, UINT uType)
+{
+    HICON hIcon = NULL;
+
+    if (hwnd == GetDesktopWindow() || hwnd == NULL)
+    {
+        static const LPCTSTR pszShell32 = TEXT("shell32.dll");
+        const INT nDesktopIndex = 34;
+        switch (uType)
+        {
+        case ICON_SMALL:
+            ::ExtractIconEx(pszShell32, nDesktopIndex, NULL, &hIcon, 1);
+            break;
+        case ICON_BIG:
+            ::ExtractIconEx(pszShell32, nDesktopIndex, &hIcon, NULL, 1);
+            break;
+        }
+        if (hIcon)
+            hIcon = CopyIcon(hIcon);
+    }
+
+    if (!hIcon)
+    {
+        DWORD_PTR dwResult = 0;
+        UINT uTimeout = 100;
+        SendMessageTimeout(hwnd, WM_GETICON, uType, 0, SMTO_ABORTIFHUNG,
+                           uTimeout, &dwResult);
+        hIcon = (HICON)dwResult;
+        if (hIcon)
+            hIcon = CopyIcon(hIcon);
+    }
+
+    if (!hIcon)
+    {
+        switch (uType)
+        {
+        case ICON_SMALL:
+            hIcon = (HICON)GetClassLongPtr(hwnd, GCL_HICONSM);
+            if (hIcon)
+                break;
+            // FALL THROUGH
+        case ICON_BIG:
+            hIcon = (HICON)GetClassLongPtr(hwnd, GCL_HICON);
+            break;
+        }
+        if (hIcon)
+            hIcon = CopyIcon(hIcon);
+    }
+
+    if (!hIcon)
+    {
+        if (!GetWindow(hwnd, GW_OWNER) && !GetParent(hwnd))
+        {
+            DWORD pid = 0;
+            GetWindowThreadProcessId(hwnd, &pid);
+
+            hIcon = GetIconOfProcessDx(pid, uType);
+        }
+    }
+
+    return hIcon;
+}
+
+inline MString GetPathOfProcessDx(DWORD pid)
+{
+    MString ret;
+    const DWORD dwAccess = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
+    if (HANDLE hProcess = ::OpenProcess(dwAccess, FALSE, pid))
+    {
+        TCHAR szPath[MAX_PATH];
+        DWORD cchPath = ARRAYSIZE(szPath);
+#if _WIN32_WINNT >= 0x600 && 0
+        if (::QueryFullProcessImageName(hProcess, 0, szPath, &cchPath))
+        {
+            ret = szPath;
+        }
+#else
+        if (::GetModuleFileNameEx(hProcess, NULL, szPath, cchPath))
+        {
+            ret = szPath;
+        }
+#endif
+        ::CloseHandle(hProcess);
+    }
+
+    return ret;
+}
+
+inline HICON GetIconOfProcessDx(DWORD pid, UINT uType)
+{
+    HICON hIcon = NULL;
+    MString strPath = GetPathOfProcessDx(pid);
+    if (strPath.size())
+    {
+        SHFILEINFO shfi;
+        ZeroMemory(&shfi, sizeof(shfi));
+        UINT uFlags = 0;
+        switch (uType)
+        {
+        case ICON_SMALL:
+            uFlags = SHGFI_ICON | SHGFI_SMALLICON;
+            break;
+
+        case ICON_BIG:
+            uFlags = SHGFI_ICON | SHGFI_LARGEICON;
+            break;
+
+        default:
+            return NULL;
+        }
+        SHGetFileInfo(strPath.c_str(), 0, &shfi, sizeof(shfi), uFlags);
+        hIcon = shfi.hIcon;
+    }
+    return hIcon;
+}
+
+inline HICON GetStdIconDx(LPCTSTR pszIcon, UINT uType)
+{
+    HICON hIcon = NULL;
+    INT cx, cy;
+    switch (uType)
+    {
+    case ICON_SMALL:
+        cx = GetSystemMetrics(SM_CXSMICON);
+        cy = GetSystemMetrics(SM_CYSMICON);
+        hIcon = (HICON)LoadImage(NULL, pszIcon, IMAGE_ICON, cx, cy, 0);
+        if (hIcon)
+            break;
+
+    case ICON_BIG:
+        hIcon = LoadIcon(NULL, pszIcon);
+        break;
+    }
+    return hIcon;
 }
 
 ////////////////////////////////////////////////////////////////////////////
