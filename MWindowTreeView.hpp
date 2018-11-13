@@ -3,7 +3,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #ifndef MZC4_MWINDOWTREEVIEW_HPP_
-#define MZC4_MWINDOWTREEVIEW_HPP_     14       /* Version 14 */
+#define MZC4_MWINDOWTREEVIEW_HPP_     15       /* Version 15 */
 
 #include "MTreeView.hpp"
 #include <shellapi.h>   // for SHGetFileInfo
@@ -256,14 +256,15 @@ inline BOOL CALLBACK MWindowTree::EnumWindowsProc(HWND hwnd, LPARAM lParam)
 {
     MWindowTreeNode *node = (MWindowTreeNode *)lParam;
 #ifdef MWINDOWTREE_ADJUST_OWNER
-    HWND hwndOwner = ::GetWindow(hwnd, GW_OWNER);
+    HWND hwndOwner = GetParent(hwnd);
     if (!hwndOwner)
-        hwndOwner = ::GetParent(hwnd);
+        hwndOwner = GetWindow(hwnd, GW_OWNER);
     if (hwndOwner)
     {
-        MWindowTreeNode *parent = node->find(hwndOwner);
-        if (parent)
-            node = parent;
+        if (MWindowTreeNode *owner = node->find(hwndOwner))
+        {
+            node = owner;
+        }
     }
 #endif
     MWindowTreeNode *new_node = node->insert_window(hwnd);
@@ -335,12 +336,12 @@ inline bool MWindowTree::get_tree(DWORD dwMWTVS_)
         {
             distribute(hSnapshot);
         }
-#ifdef MWINDOWTREE_ADJUST_OWNER
         else
         {
+#ifdef MWINDOWTREE_ADJUST_OWNER
             adjust_owner();
-        }
 #endif
+        }
     }
 
     CloseHandle(hSnapshot);
@@ -366,9 +367,12 @@ inline bool MWindowTree::adjust_owner()
         {
             if (MWindowTreeNode *owner = m_root->find(hwndOwner))
             {
-                m_root->m_children.erase(m_root->m_children.begin() + i);
-                owner->m_children.push_back(child);
-                --i;
+                if (owner != child && owner != m_root)
+                {
+                    m_root->m_children.erase(m_root->m_children.begin() + i);
+                    owner->m_children.push_back(child);
+                    --i;
+                }
             }
         }
     }
@@ -419,6 +423,13 @@ inline bool MWindowTree::distribute(HANDLE hSnapshot)
 #endif
                 break;
             }
+        }
+        if (k == new_root->m_children.size())
+        {
+            MWindowTreeNode *new_child = new MWindowTreeNode(MWindowTreeNode::PROCESS);
+            new_child->m_id = pid;
+            new_child->m_children.push_back(child);
+            new_root->m_children.push_back(new_child);
         }
     }
 
