@@ -3,7 +3,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #ifndef MZC4_MWINDOWTREEVIEW_HPP_
-#define MZC4_MWINDOWTREEVIEW_HPP_     12       /* Version 12 */
+#define MZC4_MWINDOWTREEVIEW_HPP_     14       /* Version 14 */
 
 #include "MTreeView.hpp"
 #include <shellapi.h>   // for SHGetFileInfo
@@ -406,6 +406,7 @@ inline bool MWindowTree::distribute(HANDLE hSnapshot)
             MWindowTreeNode *new_child = new_root->m_children[k];
             if (new_child->m_id == pid)
             {
+#ifdef MWINDOWTREE_ADJUST_OWNER
                 HWND hwndOwner = GetParent(child->m_hwndTarget);
                 if (!hwndOwner)
                     hwndOwner = GetWindow(child->m_hwndTarget, GW_OWNER);
@@ -413,15 +414,11 @@ inline bool MWindowTree::distribute(HANDLE hSnapshot)
                     owner->m_children.push_back(child);
                 else
                     new_child->m_children.push_back(child);
+#else
+                new_child->m_children.push_back(child);
+#endif
                 break;
             }
-        }
-        if (k == new_root->m_children.size())
-        {
-            MWindowTreeNode *new_child = new MWindowTreeNode(MWindowTreeNode::PROCESS);
-            new_child->m_id = pid;
-            new_child->m_children.push_back(child);
-            new_root->m_children.push_back(new_child);
         }
     }
 
